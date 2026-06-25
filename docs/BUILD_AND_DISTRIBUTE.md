@@ -8,6 +8,8 @@ This document explains how to build the GitNexus npm package from source and dis
 
 - [Prerequisites](#prerequisites)
 - [Building from Source](#building-from-source)
+  - [Method A: Local Build](#method-a-local-build)
+  - [Method B: Build with Docker](#method-b-build-with-docker)
 - [Distribution Methods](#distribution-methods)
   - [Method 1: Local Tarball Install](#method-1-local-tarball-install)
   - [Method 2: Publish to a Private npm Registry](#method-2-publish-to-a-private-npm-registry)
@@ -40,20 +42,24 @@ This document explains how to build the GitNexus npm package from source and dis
 
 ## Building from Source
 
-### 1. Clone the Repository
+Two build methods are available: **Local Build** (requires Node.js and toolchain) and **Docker Build** (requires only Docker — no other dependencies needed).
+
+### Method A: Local Build
+
+#### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/cheyang/GitNexus.git
 cd GitNexus
 ```
 
-### 2. Install Root Dependencies
+#### 2. Install Root Dependencies
 
 ```bash
 npm install
 ```
 
-### 3. Build gitnexus-shared (Shared Type Library)
+#### 3. Build gitnexus-shared (Shared Type Library)
 
 ```bash
 cd gitnexus-shared
@@ -62,7 +68,7 @@ npm run build
 cd ..
 ```
 
-### 4. Build gitnexus (Main CLI Package)
+#### 4. Build gitnexus (Main CLI Package)
 
 ```bash
 cd gitnexus
@@ -102,7 +108,7 @@ gitnexus/
 └── web/                   # Web UI static files (generated at build time)
 ```
 
-### 5. Build the Web UI (Optional)
+#### 5. Build the Web UI (Optional)
 
 If you need the Web UI (`gitnexus serve` feature), also build the frontend:
 
@@ -114,6 +120,181 @@ cd ..
 ```
 
 > Note: `gitnexus/scripts/build.js` automatically detects and builds `gitnexus-web`, so you can skip this step if you already ran `npm run build` in step 4.
+
+---
+
+### Method B: Build with Docker
+
+If you don't want to install Node.js, Python, C++ compilers, or any other toolchain locally, you can build everything entirely with Docker. Only Docker is required.
+
+#### Quick Start: Build Docker Images
+
+The project ships multi-stage Dockerfiles — just build directly:
+
+```bash
+git clone https://github.com/cheyang/GitNexus.git
+cd GitNexus
+
+# Build CLI/Server image (full CLI + MCP + HTTP server)
+docker build -f Dockerfile.cli -t gitnexus:latest .
+
+# Build Web UI image
+docker build -f Dockerfile.web -t gitnexus-web:latest .
+```
+
+The build process handles everything automatically: installing dependencies, compiling TypeScript, building native tree-sitter grammars, and pruning dev dependencies.
+
+#### Start with docker compose
+
+```bash
+# Use locally built images
+cat > .env << 'EOF'
+SERVER_IMAGE=gitnexus:latest
+WEB_IMAGE=gitnexus-web:latest
+WORKSPACE_DIR=/path/to/your/repos
+EOF
+
+docker compose up -d
+```
+
+- Server: `http://localhost:4747`
+- Web UI: `http://localhost:4173`
+
+#### Index Repos Inside Docker
+
+```bash
+# Index a mounted repository
+docker compose exec gitnexus-server gitnexus analyze /workspace/my-repo
+
+# List indexed repos
+docker compose exec gitnexus-server gitnexus list
+
+# Check status
+docker compose exec gitnexus-server gitnexus status
+```
+
+#### Use Docker to Build an npm Tarball (No Local Toolchain)
+
+If you need an npm tarball (`.tgz`) instead of a Docker image, you can use Docker purely as a build environment:
+
+```bash
+# Create a build-only Dockerfile
+cat > Dockerfile.pack << 'DOCKERFILE'
+FROM node:22-bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ git && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY . .
+
+# Build shared
+RUN cd gitnexus-shared && npm install && npm run build
+
+# Build CLI
+RUN cd gitnexus && npm install && npm run build
+
+# Pack the tarball
+RUN cd gitnexus && npm pack && mv *.tgz /tmp/
+
+CMD ["cp", "-r", "/tmp/", "/output/"]
+DOCKERFILE
+
+# Build and extract the tarball
+docker build -f Dockerfile.pack -t gitnexus-builder .
+docker run --rm -v "$(pwd)/output:/output" gitnexus-builder \
+    sh -c "cp /tmp/*.tgz /output/"
+
+# The tarball is in ./output/
+ls output/*.tgz
+```
+
+The extracted `.tgz` can be installed on any machine with Node.js 22+:
+
+```bash
+npm install -g ./output/gitnexus-1.6.8.tgz
+```
+
+#### Multi-Architecture Builds
+
+Build images for different platforms (e.g. build Linux amd64/arm64 on a Mac):
+
+```bash
+# Create a buildx builder (first time only)
+docker buildx create --name gitnexus-builder --use
+
+# Multi-arch build and push to a registry
+docker buildx build -f Dockerfile.cli \
+    --platform linux/amd64,linux/arm64 \
+    -t registry.example.com/gitnexus:latest \
+    --push .
+
+# Multi-arch build for Web UI
+docker buildx build -f Dockerfile.web \
+    --platform linux/amd64,linux/arm64 \
+    -t registry.example.com/gitnexus-web:latest \
+    --push .
+```
+
+#### Docker Build Methods Compared
+
+| Scenario | Recommended Method | Notes |
+|----------|-------------------|-------|
+| Deploy as a service (Server + Web UI) | `docker build -f Dockerfile.cli` | Build the official Dockerfile directly |
+| Need npm tarball for distribution | `Dockerfile.pack` + extract tgz | Use Docker as a build environment |
+| Production Kubernetes deployment | `docker buildx` multi-arch | Push to a private registry |
+| Development and testing | `docker compose up -d` | Quick local full-stack startup |
+
+#### Push to a Private Container Registry
+
+```bash
+# Push to Harbor / private registry
+docker tag gitnexus:latest harbor.example.com/devtools/gitnexus:latest
+docker push harbor.example.com/devtools/gitnexus:latest
+
+# Push to AWS ECR
+docker tag gitnexus:latest 123456789.dkr.ecr.us-east-1.amazonaws.com/gitnexus:latest
+docker push 123456789.dkr.ecr.us-east-1.amazonaws.com/gitnexus:latest
+
+# Push to GCR
+docker tag gitnexus:latest gcr.io/my-project/gitnexus:latest
+docker push gcr.io/my-project/gitnexus:latest
+```
+
+#### Dockerfile Breakdown
+
+The project provides two official Dockerfiles:
+
+**`Dockerfile.cli`** — CLI/Server image (multi-stage build):
+
+```
+Stage 1 (builder):
+  Base image: node:22-bookworm-slim
+  Installs toolchain: python3 + make + g++ + git
+  Builds gitnexus-shared → builds gitnexus → prunes devDependencies
+  Rebuilds vendored tree-sitter grammars (needed after prune)
+
+Stage 2 (runtime):
+  Base image: node:22-bookworm-slim (no build tools, smaller)
+  Copies only: dist/ + node_modules/ + vendor/ + hooks/ + skills/
+  Installs LadybugDB FTS extension (BM25 keyword search)
+  Runs as node user (non-root)
+  Exposes port 4747
+```
+
+**`Dockerfile.web`** — Web UI image (multi-stage build):
+
+```
+Stage 1 (builder):
+  Base image: node:22-bookworm-slim
+  Builds gitnexus-shared → builds gitnexus-web (Vite frontend)
+
+Stage 2 (runtime):
+  Base image: node:22-bookworm-slim
+  Copies only: built static files
+  Runs as node user
+  Exposes port 4173
+```
 
 ---
 

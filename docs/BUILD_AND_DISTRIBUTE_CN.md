@@ -8,6 +8,8 @@
 
 - [前置条件](#前置条件)
 - [从源码构建](#从源码构建)
+  - [方式 A：本地构建](#方式-a本地构建)
+  - [方式 B：通过 Docker 构建](#方式-b通过-docker-构建)
 - [分发方式](#分发方式)
   - [方式一：本地 tarball 安装](#方式一本地-tarball-安装)
   - [方式二：发布到私有 npm Registry](#方式二发布到私有-npm-registry)
@@ -40,20 +42,24 @@
 
 ## 从源码构建
 
-### 1. 克隆仓库
+提供两种构建方式：**本地构建**（需要 Node.js 和工具链）和 **Docker 构建**（只需要 Docker，无需安装任何其他依赖）。
+
+### 方式 A：本地构建
+
+#### 1. 克隆仓库
 
 ```bash
 git clone https://github.com/cheyang/GitNexus.git
 cd GitNexus
 ```
 
-### 2. 安装根依赖
+#### 2. 安装根依赖
 
 ```bash
 npm install
 ```
 
-### 3. 构建 gitnexus-shared（共享类型库）
+#### 3. 构建 gitnexus-shared（共享类型库）
 
 ```bash
 cd gitnexus-shared
@@ -62,7 +68,7 @@ npm run build
 cd ..
 ```
 
-### 4. 构建 gitnexus（CLI 主包）
+#### 4. 构建 gitnexus（CLI 主包）
 
 ```bash
 cd gitnexus
@@ -102,7 +108,7 @@ gitnexus/
 └── web/                   # Web UI 静态文件（构建时生成）
 ```
 
-### 5. 构建 Web UI（可选）
+#### 5. 构建 Web UI（可选）
 
 如果需要 Web UI（`gitnexus serve` 功能），还需构建前端：
 
@@ -114,6 +120,181 @@ cd ..
 ```
 
 > 注意：`gitnexus/scripts/build.js` 会自动检测 `gitnexus-web` 并构建，如果你已在步骤 4 中运行过 `npm run build`，这一步可以跳过。
+
+---
+
+### 方式 B：通过 Docker 构建
+
+如果你不想在本地安装 Node.js、Python、C++ 编译器等工具链，可以完全通过 Docker 完成构建。只需安装 Docker 即可。
+
+#### 快速开始：一键构建 Docker 镜像
+
+项目已提供多阶段 Dockerfile，直接构建即可：
+
+```bash
+git clone https://github.com/cheyang/GitNexus.git
+cd GitNexus
+
+# 构建 CLI/Server 镜像（包含完整 CLI + MCP + HTTP 服务）
+docker build -f Dockerfile.cli -t gitnexus:latest .
+
+# 构建 Web UI 镜像
+docker build -f Dockerfile.web -t gitnexus-web:latest .
+```
+
+构建过程自动完成所有事情：安装依赖、编译 TypeScript、构建原生 tree-sitter 语法、裁剪开发依赖。
+
+#### 使用 docker compose 一键启动
+
+```bash
+# 使用本地构建的镜像
+cat > .env << 'EOF'
+SERVER_IMAGE=gitnexus:latest
+WEB_IMAGE=gitnexus-web:latest
+WORKSPACE_DIR=/path/to/your/repos
+EOF
+
+docker compose up -d
+```
+
+- Server：`http://localhost:4747`
+- Web UI：`http://localhost:4173`
+
+#### 在 Docker 中索引仓库
+
+```bash
+# 索引容器内挂载的仓库
+docker compose exec gitnexus-server gitnexus analyze /workspace/my-repo
+
+# 列出已索引仓库
+docker compose exec gitnexus-server gitnexus list
+
+# 查看状态
+docker compose exec gitnexus-server gitnexus status
+```
+
+#### 用 Docker 构建 npm tarball（不安装本地工具链）
+
+如果你需要的不是 Docker 镜像，而是 npm tarball（`.tgz`），可以用 Docker 作为构建环境：
+
+```bash
+# 创建一个构建专用 Dockerfile
+cat > Dockerfile.pack << 'DOCKERFILE'
+FROM node:22-bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ git && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY . .
+
+# 构建 shared
+RUN cd gitnexus-shared && npm install && npm run build
+
+# 构建 CLI
+RUN cd gitnexus && npm install && npm run build
+
+# 打包 tarball
+RUN cd gitnexus && npm pack && mv *.tgz /tmp/
+
+CMD ["cp", "-r", "/tmp/", "/output/"]
+DOCKERFILE
+
+# 构建并提取 tarball
+docker build -f Dockerfile.pack -t gitnexus-builder .
+docker run --rm -v "$(pwd)/output:/output" gitnexus-builder \
+    sh -c "cp /tmp/*.tgz /output/"
+
+# tarball 在 ./output/ 目录下
+ls output/*.tgz
+```
+
+提取到的 `.tgz` 文件可以在任何有 Node.js 22+ 的机器上安装：
+
+```bash
+npm install -g ./output/gitnexus-1.6.8.tgz
+```
+
+#### 多架构构建
+
+为不同平台构建镜像（比如在 Mac 上构建 Linux amd64/arm64）：
+
+```bash
+# 创建 buildx builder（首次）
+docker buildx create --name gitnexus-builder --use
+
+# 多架构构建并推送到 Registry
+docker buildx build -f Dockerfile.cli \
+    --platform linux/amd64,linux/arm64 \
+    -t registry.example.com/gitnexus:latest \
+    --push .
+
+# 多架构构建 Web UI
+docker buildx build -f Dockerfile.web \
+    --platform linux/amd64,linux/arm64 \
+    -t registry.example.com/gitnexus-web:latest \
+    --push .
+```
+
+#### Docker 构建方式对比
+
+| 场景 | 推荐方式 | 说明 |
+|------|---------|------|
+| 部署为服务（Server + Web UI） | `docker build -f Dockerfile.cli` | 直接构建官方 Dockerfile |
+| 只需要 npm tarball 分发 | `Dockerfile.pack` + 提取 tgz | Docker 当构建环境用 |
+| 生产环境 Kubernetes 部署 | `docker buildx` 多架构 | 推送到私有 Registry |
+| 开发测试 | `docker compose up -d` | 本地快速启动全栈 |
+
+#### Docker 镜像推送到私有仓库
+
+```bash
+# 推送到 Harbor / 私有 Registry
+docker tag gitnexus:latest harbor.example.com/devtools/gitnexus:latest
+docker push harbor.example.com/devtools/gitnexus:latest
+
+# 推送到阿里云 ACR
+docker tag gitnexus:latest registry.cn-hangzhou.aliyuncs.com/your-ns/gitnexus:latest
+docker push registry.cn-hangzhou.aliyuncs.com/your-ns/gitnexus:latest
+
+# 推送到 AWS ECR
+docker tag gitnexus:latest 123456789.dkr.ecr.us-east-1.amazonaws.com/gitnexus:latest
+docker push 123456789.dkr.ecr.us-east-1.amazonaws.com/gitnexus:latest
+```
+
+#### Dockerfile 详解
+
+项目提供两个官方 Dockerfile：
+
+**`Dockerfile.cli`** — CLI/Server 镜像（多阶段构建）：
+
+```
+阶段 1 (builder):
+  基础镜像: node:22-bookworm-slim
+  安装工具链: python3 + make + g++ + git
+  构建 gitnexus-shared → 构建 gitnexus → 裁剪 devDependencies
+  重建 vendored tree-sitter 语法（prune 后需要恢复）
+
+阶段 2 (runtime):
+  基础镜像: node:22-bookworm-slim（无构建工具链，更小）
+  仅复制: dist/ + node_modules/ + vendor/ + hooks/ + skills/
+  安装 LadybugDB FTS 扩展（BM25 关键词搜索）
+  以 node 用户运行（非 root）
+  暴露端口 4747
+```
+
+**`Dockerfile.web`** — Web UI 镜像（多阶段构建）：
+
+```
+阶段 1 (builder):
+  基础镜像: node:22-bookworm-slim
+  构建 gitnexus-shared → 构建 gitnexus-web（Vite 前端）
+
+阶段 2 (runtime):
+  基础镜像: node:22-bookworm-slim
+  仅复制: 构建产物的静态文件
+  以 node 用户运行
+  暴露端口 4173
+```
 
 ---
 
