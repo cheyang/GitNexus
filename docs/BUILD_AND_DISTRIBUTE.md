@@ -1,59 +1,59 @@
-# 自构建与分发 GitNexus npm 包
+# Building and Distributing GitNexus npm Package
 
-本文档详细说明如何从源码构建 GitNexus npm 包，并通过多种方式分发和安装。
-
----
-
-## 目录
-
-- [前置条件](#前置条件)
-- [从源码构建](#从源码构建)
-- [分发方式](#分发方式)
-  - [方式一：本地 tarball 安装](#方式一本地-tarball-安装)
-  - [方式二：发布到私有 npm Registry](#方式二发布到私有-npm-registry)
-  - [方式三：直接从 Git 仓库安装](#方式三直接从-git-仓库安装)
-  - [方式四：发布到公共 npm Registry](#方式四发布到公共-npm-registry)
-- [自定义构建](#自定义构建)
-  - [修改包名和版本号](#修改包名和版本号)
-  - [跳过 Web UI 构建](#跳过-web-ui-构建)
-  - [跳过可选语法](#跳过可选语法)
-- [Docker 镜像构建](#docker-镜像构建)
-- [CI/CD 自动发布](#cicd-自动发布)
-- [验证安装](#验证安装)
-- [常见问题](#常见问题)
+This document explains how to build the GitNexus npm package from source and distribute/install it through various methods.
 
 ---
 
-## 前置条件
+## Table of Contents
 
-| 工具 | 最低版本 | 用途 |
-|------|---------|------|
-| Node.js | 22.0.0 | 运行时 |
-| npm | 10.x+ | 包管理 |
-| Git | 2.x | 源码获取 |
-| Python 3 | 3.8+ | 部分 tree-sitter 语法的原生编译（可选） |
-| C++ 编译器 | gcc/clang/MSVC | 原生依赖编译（可选） |
-
-> 如果不需要 Dart/Proto/Swift/Kotlin 语言支持，可以跳过 Python 和 C++ 编译器。
+- [Prerequisites](#prerequisites)
+- [Building from Source](#building-from-source)
+- [Distribution Methods](#distribution-methods)
+  - [Method 1: Local Tarball Install](#method-1-local-tarball-install)
+  - [Method 2: Publish to a Private npm Registry](#method-2-publish-to-a-private-npm-registry)
+  - [Method 3: Install Directly from Git](#method-3-install-directly-from-git)
+  - [Method 4: Publish to the Public npm Registry](#method-4-publish-to-the-public-npm-registry)
+- [Custom Builds](#custom-builds)
+  - [Changing the Package Name and Version](#changing-the-package-name-and-version)
+  - [Skipping the Web UI Build](#skipping-the-web-ui-build)
+  - [Skipping Optional Grammars](#skipping-optional-grammars)
+- [Docker Image Build](#docker-image-build)
+- [CI/CD Automated Publishing](#cicd-automated-publishing)
+- [Verifying the Installation](#verifying-the-installation)
+- [FAQ](#faq)
 
 ---
 
-## 从源码构建
+## Prerequisites
 
-### 1. 克隆仓库
+| Tool | Minimum Version | Purpose |
+|------|----------------|---------|
+| Node.js | 22.0.0 | Runtime |
+| npm | 10.x+ | Package management |
+| Git | 2.x | Source code checkout |
+| Python 3 | 3.8+ | Native compilation for some tree-sitter grammars (optional) |
+| C++ compiler | gcc/clang/MSVC | Native dependency compilation (optional) |
+
+> Python and a C++ compiler can be skipped if you don't need Dart/Proto/Swift/Kotlin language support.
+
+---
+
+## Building from Source
+
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/cheyang/GitNexus.git
 cd GitNexus
 ```
 
-### 2. 安装根依赖
+### 2. Install Root Dependencies
 
 ```bash
 npm install
 ```
 
-### 3. 构建 gitnexus-shared（共享类型库）
+### 3. Build gitnexus-shared (Shared Type Library)
 
 ```bash
 cd gitnexus-shared
@@ -62,7 +62,7 @@ npm run build
 cd ..
 ```
 
-### 4. 构建 gitnexus（CLI 主包）
+### 4. Build gitnexus (Main CLI Package)
 
 ```bash
 cd gitnexus
@@ -71,40 +71,40 @@ npm run build
 cd ..
 ```
 
-`npm run build`（即 `node scripts/build.js`）会自动完成以下步骤：
+`npm run build` (i.e. `node scripts/build.js`) automatically performs the following steps:
 
-1. 编译 `gitnexus-shared`（TypeScript → JavaScript）
-2. 编译 `gitnexus`（TypeScript → JavaScript）
-3. 将 `gitnexus-shared/dist` 复制到 `gitnexus/dist/_shared`
-4. 重写所有 `gitnexus-shared` 导入路径为相对路径
-5. 设置 CLI 入口文件可执行权限
-6. 构建 Web UI 并复制到 `gitnexus/web/`（如果 `gitnexus-web` 存在）
+1. Compiles `gitnexus-shared` (TypeScript → JavaScript)
+2. Compiles `gitnexus` (TypeScript → JavaScript)
+3. Copies `gitnexus-shared/dist` into `gitnexus/dist/_shared`
+4. Rewrites all `gitnexus-shared` import paths to relative paths
+5. Sets the CLI entry file as executable
+6. Builds the Web UI and copies it to `gitnexus/web/` (if `gitnexus-web` exists)
 
-构建产物结构：
+Build output structure:
 
 ```
 gitnexus/
-├── dist/                  # 编译后的 JavaScript
-│   ├── cli/index.js       # CLI 入口（bin 指向这里）
-│   ├── _shared/           # 内联的共享类型
-│   ├── core/              # 核心逻辑
-│   ├── mcp/               # MCP 服务器
+├── dist/                  # Compiled JavaScript
+│   ├── cli/index.js       # CLI entry (bin points here)
+│   ├── _shared/           # Inlined shared types
+│   ├── core/              # Core logic
+│   ├── mcp/               # MCP server
 │   └── ...
 ├── hooks/                 # Claude Code / Cursor hooks
-├── scripts/               # 构建和安装脚本
-├── skills/                # AI agent 技能文件
-├── vendor/                # 预编译的 tree-sitter 语法
+├── scripts/               # Build and install scripts
+├── skills/                # AI agent skill files
+├── vendor/                # Prebuilt tree-sitter grammars
 │   ├── tree-sitter-c/
 │   ├── tree-sitter-dart/
 │   ├── tree-sitter-kotlin/
 │   ├── tree-sitter-proto/
 │   └── tree-sitter-swift/
-└── web/                   # Web UI 静态文件（构建时生成）
+└── web/                   # Web UI static files (generated at build time)
 ```
 
-### 5. 构建 Web UI（可选）
+### 5. Build the Web UI (Optional)
 
-如果需要 Web UI（`gitnexus serve` 功能），还需构建前端：
+If you need the Web UI (`gitnexus serve` feature), also build the frontend:
 
 ```bash
 cd gitnexus-web
@@ -113,144 +113,144 @@ npm run build
 cd ..
 ```
 
-> 注意：`gitnexus/scripts/build.js` 会自动检测 `gitnexus-web` 并构建，如果你已在步骤 4 中运行过 `npm run build`，这一步可以跳过。
+> Note: `gitnexus/scripts/build.js` automatically detects and builds `gitnexus-web`, so you can skip this step if you already ran `npm run build` in step 4.
 
 ---
 
-## 分发方式
+## Distribution Methods
 
-### 方式一：本地 tarball 安装
+### Method 1: Local Tarball Install
 
-最简单的分发方式 — 打包成 `.tgz` 文件，拷贝到目标机器安装。
+The simplest distribution method — pack into a `.tgz` file, copy to target machines and install.
 
-**打包：**
+**Pack:**
 
 ```bash
 cd gitnexus
 npm pack
 ```
 
-生成文件：`gitnexus-1.6.8.tgz`（版本号取决于 `package.json`）。
+This generates: `gitnexus-1.6.8.tgz` (version depends on `package.json`).
 
-`npm pack` 只会包含 `package.json` 中 `files` 字段声明的内容：
+`npm pack` only includes contents declared in the `files` field of `package.json`:
 
 ```json
 "files": ["dist", "hooks", "scripts", "skills", "vendor", "web"]
 ```
 
-**安装（目标机器）：**
+**Install (on target machine):**
 
 ```bash
-# 全局安装
+# Global install
 npm install -g ./gitnexus-1.6.8.tgz
 
-# 验证
+# Verify
 gitnexus --version
 ```
 
-**离线场景的完整步骤：**
+**Full steps for offline scenarios:**
 
 ```bash
-# 构建机器：打包 tarball
+# Build machine: pack the tarball
 cd gitnexus && npm pack
 
-# 传输到目标机器（U 盘、scp 等）
+# Transfer to target machine (USB, scp, etc.)
 scp gitnexus-1.6.8.tgz user@target:/tmp/
 
-# 目标机器：安装
+# Target machine: install
 ssh user@target
 npm install -g /tmp/gitnexus-1.6.8.tgz
 ```
 
 ---
 
-### 方式二：发布到私有 npm Registry
+### Method 2: Publish to a Private npm Registry
 
-适用于企业内部分发。
+Ideal for internal enterprise distribution.
 
-**使用 Verdaccio（本地私有 Registry）：**
+**Using Verdaccio (local private registry):**
 
 ```bash
-# 安装 Verdaccio
+# Install Verdaccio
 npm install -g verdaccio
-verdaccio &  # 默认在 http://localhost:4873
+verdaccio &  # Runs on http://localhost:4873 by default
 
-# 配置 npm 指向私有 Registry
+# Point npm to the private registry
 npm set registry http://localhost:4873
 
-# 创建用户（首次）
+# Create a user (first time)
 npm adduser --registry http://localhost:4873
 
-# 发布
+# Publish
 cd gitnexus
 npm publish --registry http://localhost:4873
 
-# 其他机器安装
+# Install from other machines
 npm install -g gitnexus --registry http://localhost:4873
 ```
 
-**使用 GitHub Packages：**
+**Using GitHub Packages:**
 
 ```bash
-# 1. 修改包名加 scope（package.json）
+# 1. Add a scope to the package name (in package.json)
 #    "name": "@cheyang/gitnexus"
 
-# 2. 添加 publishConfig
+# 2. Add publishConfig
 #    "publishConfig": { "registry": "https://npm.pkg.github.com" }
 
-# 3. 登录 GitHub Packages
+# 3. Log in to GitHub Packages
 npm login --registry https://npm.pkg.github.com
 # Username: cheyang
-# Password: <你的 GitHub Personal Access Token>
+# Password: <your GitHub Personal Access Token>
 
-# 4. 发布
+# 4. Publish
 cd gitnexus
 npm publish
 
-# 5. 其他机器安装
+# 5. Install from other machines
 echo "@cheyang:registry=https://npm.pkg.github.com" >> .npmrc
 npm install -g @cheyang/gitnexus
 ```
 
-**使用阿里云 cnpm / 其他私有 Registry：**
+**Using other private registries (Artifactory, cnpm, etc.):**
 
 ```bash
-# 发布
+# Publish
 cd gitnexus
 npm publish --registry https://your-registry.example.com
 
-# 安装
+# Install
 npm install -g gitnexus --registry https://your-registry.example.com
 ```
 
 ---
 
-### 方式三：直接从 Git 仓库安装
+### Method 3: Install Directly from Git
 
-无需发布到 Registry，直接从 Git 仓库安装。
+No registry needed — install directly from a Git repository.
 
 ```bash
-# 从 GitHub 安装（需要 postinstall 有构建步骤）
+# Install from GitHub (requires build toolchain on target)
 npm install -g git+https://github.com/cheyang/GitNexus.git#main
 
-# 或使用子目录安装（npm 7.24+）
+# Or use the shorthand (npm 7.24+)
 npm install -g "github:cheyang/GitNexus#main"
 ```
 
-> **注意：** 这种方式要求目标机器有完整的构建工具链（Node.js、C++ 编译器等），因为 `postinstall` 脚本会在安装时触发原生依赖编译。对于 monorepo 结构的项目，这种方式可能不太方便。推荐先本地构建再用 tarball 分发。
+> **Note:** This requires a full build toolchain (Node.js, C++ compiler, etc.) on the target machine because the `postinstall` script triggers native dependency compilation. For monorepo projects, this can be inconvenient. Building locally first and distributing via tarball is recommended instead.
 
 ---
 
-### 方式四：发布到公共 npm Registry
+### Method 4: Publish to the Public npm Registry
 
-如果你 fork 了项目并希望以自己的包名发布：
+If you've forked the project and want to publish under your own package name:
 
 ```bash
-# 1. 修改 package.json
+# 1. Edit package.json
 cd gitnexus
 ```
 
-修改以下字段：
+Modify the following fields:
 
 ```json
 {
@@ -263,37 +263,37 @@ cd gitnexus
 ```
 
 ```bash
-# 2. 登录 npm
+# 2. Log in to npm
 npm login
 
-# 3. 构建
+# 3. Build
 npm run build
 
-# 4. 发布
+# 4. Publish
 npm publish --access public
 
-# 5. 安装
+# 5. Install
 npm install -g @cheyang/gitnexus
 ```
 
-> **许可证注意：** GitNexus 使用 **PolyForm Noncommercial** 许可证，商业使用需联系原作者获取授权。
+> **License note:** GitNexus uses the **PolyForm Noncommercial** license. Commercial use requires authorization from the original author.
 
 ---
 
-## 自定义构建
+## Custom Builds
 
-### 修改包名和版本号
+### Changing the Package Name and Version
 
 ```bash
 cd gitnexus
 
-# 修改版本号
+# Change the version
 npm version 2.0.0 --no-git-tag-version
 
-# 或直接编辑 package.json
+# Or edit package.json directly
 ```
 
-修改 `package.json` 中的关键字段：
+Key fields to modify in `package.json`:
 
 ```json
 {
@@ -305,7 +305,7 @@ npm version 2.0.0 --no-git-tag-version
 }
 ```
 
-如果你想修改 CLI 命令名（比如从 `gitnexus` 改为 `mycodegraph`）：
+To change the CLI command name (e.g. from `gitnexus` to `mycodegraph`):
 
 ```json
 {
@@ -315,89 +315,89 @@ npm version 2.0.0 --no-git-tag-version
 }
 ```
 
-安装后就可以用 `mycodegraph analyze` 来运行了。
+After installation, you can run `mycodegraph analyze`.
 
-### 跳过 Web UI 构建
+### Skipping the Web UI Build
 
-如果你只需要 CLI + MCP，不需要 Web UI，可以在构建前删除或移走 `gitnexus-web` 目录：
+If you only need CLI + MCP without the Web UI, move or remove the `gitnexus-web` directory before building:
 
 ```bash
-# 构建脚本会自动跳过 Web UI
+# The build script auto-skips the Web UI
 mv gitnexus-web gitnexus-web.bak
 cd gitnexus && npm run build
 ```
 
-构建日志会显示 `[build] skipping web UI (gitnexus-web not found)`。
+The build log will show `[build] skipping web UI (gitnexus-web not found)`.
 
-### 跳过可选语法
+### Skipping Optional Grammars
 
-减少包体积，跳过 Dart/Proto/Swift/Kotlin 语法：
+Reduce package size by skipping Dart/Proto/Swift/Kotlin grammars:
 
 ```bash
 GITNEXUS_SKIP_OPTIONAL_GRAMMARS=1 npm run build
 ```
 
-或者在安装时跳过：
+Or skip at install time:
 
 ```bash
 GITNEXUS_SKIP_OPTIONAL_GRAMMARS=1 npm install -g ./gitnexus-1.6.8.tgz
 ```
 
-### 控制构建超时
+### Controlling Build Timeout
 
-大型项目的 TypeScript 编译可能较慢：
+TypeScript compilation for large projects may be slow:
 
 ```bash
-GITNEXUS_BUILD_TIMEOUT_MS=600000 npm run build  # 10 分钟
+GITNEXUS_BUILD_TIMEOUT_MS=600000 npm run build  # 10 minutes
 ```
 
 ---
 
-## Docker 镜像构建
+## Docker Image Build
 
-### 构建 CLI/Server 镜像
+### Build CLI/Server Image
 
 ```bash
-# 从仓库根目录
+# From the repository root
 docker build -f Dockerfile.cli -t my-gitnexus:latest .
 ```
 
-### 构建 Web UI 镜像
+### Build Web UI Image
 
 ```bash
 docker build -f Dockerfile.web -t my-gitnexus-web:latest .
 ```
 
-### 使用自定义镜像运行
+### Run with Custom Images
 
 ```bash
-# 创建 .env 文件
+# Create a .env file
 cat > .env << 'EOF'
 CLI_IMAGE=my-gitnexus:latest
 WEB_IMAGE=my-gitnexus-web:latest
 EOF
 
-# 启动
+# Start
 docker compose --env-file .env up -d
 ```
 
-### 推送到私有镜像仓库
+### Push to a Private Container Registry
 
 ```bash
-# 推送到私有 Registry
+# Push to a private registry
 docker tag my-gitnexus:latest registry.example.com/gitnexus:latest
 docker push registry.example.com/gitnexus:latest
 
-# 推送到阿里云 ACR
-docker tag my-gitnexus:latest registry.cn-hangzhou.aliyuncs.com/your-ns/gitnexus:latest
-docker push registry.cn-hangzhou.aliyuncs.com/your-ns/gitnexus:latest
+# Push to a cloud registry (e.g. AWS ECR, GCR, ACR)
+docker tag my-gitnexus:latest 123456789.dkr.ecr.us-east-1.amazonaws.com/gitnexus:latest
+docker push 123456789.dkr.ecr.us-east-1.amazonaws.com/gitnexus:latest
 ```
 
 ---
 
-## CI/CD 自动发布
+## CI/CD Automated Publishing
 
-### GitHub Actions 自动构建并发布
+### GitHub Actions — Build and Publish to npm
 
 ```yaml
 # .github/workflows/build-and-publish.yml
@@ -418,21 +418,21 @@ jobs:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
 
-      # 构建 shared
+      # Build shared
       - name: Build shared
         run: |
           cd gitnexus-shared
           npm install
           npm run build
 
-      # 构建主包
+      # Build main package
       - name: Build CLI
         run: |
           cd gitnexus
           npm install
           npm run build
 
-      # 发布
+      # Publish
       - name: Publish
         run: |
           cd gitnexus
@@ -441,7 +441,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
 
-### 发布到 GitHub Packages
+### Publish to GitHub Packages
 
 ```yaml
 # .github/workflows/publish-ghpkg.yml
@@ -482,53 +482,53 @@ jobs:
 
 ---
 
-## 验证安装
+## Verifying the Installation
 
-安装完成后，运行以下命令验证：
+After installation, run these commands to verify:
 
 ```bash
-# 检查版本
+# Check version
 gitnexus --version
 
-# 检查 CLI 是否正常
+# Check CLI help
 gitnexus --help
 
-# 测试索引功能（在任意 Git 仓库中）
+# Test indexing (in any Git repository)
 cd /path/to/any/repo
 gitnexus analyze
 
-# 检查索引状态
+# Check index status
 gitnexus status
 
-# 测试 MCP 服务器
-gitnexus mcp  # 启动 MCP（stdio 模式，Ctrl+C 退出）
+# Test MCP server
+gitnexus mcp  # Starts MCP in stdio mode (Ctrl+C to exit)
 
-# 测试 HTTP 服务器
-gitnexus serve  # 启动后访问 http://localhost:4747
+# Test HTTP server
+gitnexus serve  # Then visit http://localhost:4747
 ```
 
 ---
 
-## 常见问题
+## FAQ
 
-### Q: `npm run build` 报错 `gitnexus-shared not found`
+### Q: `npm run build` fails with `gitnexus-shared not found`
 
-确保你在仓库根目录下先构建了 `gitnexus-shared`：
+Make sure you built `gitnexus-shared` first from the repo root:
 
 ```bash
 cd gitnexus-shared && npm install && npm run build && cd ..
 cd gitnexus && npm install && npm run build
 ```
 
-### Q: `postinstall` 阶段原生编译失败
+### Q: Native compilation fails during `postinstall`
 
-这通常是 tree-sitter 语法的原生绑定编译问题。跳过可选语法：
+This is usually a tree-sitter grammar native binding compilation issue. Skip optional grammars:
 
 ```bash
 GITNEXUS_SKIP_OPTIONAL_GRAMMARS=1 npm install
 ```
 
-或者确保安装了 C++ 编译工具链：
+Or make sure you have a C++ build toolchain installed:
 
 ```bash
 # macOS
@@ -541,42 +541,42 @@ sudo apt install build-essential python3
 sudo yum groupinstall "Development Tools"
 ```
 
-### Q: tarball 安装后 `gitnexus` 命令找不到
+### Q: `gitnexus` command not found after tarball install
 
-检查 npm 全局 bin 路径是否在 `PATH` 中：
+Check that npm's global bin directory is in your `PATH`:
 
 ```bash
 npm config get prefix
-# 将 <prefix>/bin 添加到 PATH
+# Add <prefix>/bin to your PATH
 export PATH="$(npm config get prefix)/bin:$PATH"
 ```
 
-### Q: 如何确认 tarball 包含了所有必要文件？
+### Q: How can I verify the tarball contains all necessary files?
 
 ```bash
-# 列出 tarball 内容（不实际解压）
+# List tarball contents (dry run, no extraction)
 npm pack --dry-run
 ```
 
-会列出所有将被包含的文件，确认 `dist/`、`vendor/`、`hooks/`、`skills/` 等都在其中。
+This lists all files that will be included. Confirm `dist/`, `vendor/`, `hooks/`, `skills/`, etc. are present.
 
-### Q: 目标机器没有网络，如何处理原生依赖？
+### Q: How do I handle native dependencies on an offline target machine?
 
-1. 在有网络的同架构机器上完整构建
-2. `npm pack` 打包 tarball
-3. 传输到离线机器
-4. 用 `GITNEXUS_SKIP_OPTIONAL_GRAMMARS=1 npm install -g ./gitnexus-x.y.z.tgz` 安装
+1. Build fully on a networked machine with the same architecture
+2. Run `npm pack` to create the tarball
+3. Transfer to the offline machine
+4. Install with `GITNEXUS_SKIP_OPTIONAL_GRAMMARS=1 npm install -g ./gitnexus-x.y.z.tgz`
 
-`vendor/` 目录中已包含预编译的平台二进制文件（prebuilds），大多数平台无需重新编译。
+The `vendor/` directory contains prebuilt platform binaries (prebuilds), so most platforms don't need recompilation.
 
-### Q: 我修改了源码后怎么重新构建？
+### Q: How do I rebuild after modifying the source?
 
 ```bash
 cd gitnexus
-npm run build  # 重新编译 TypeScript 并打包
+npm run build  # Recompiles TypeScript and bundles everything
 ```
 
-如果修改了 `gitnexus-shared`，需要先重新构建它：
+If you modified `gitnexus-shared`, rebuild it first:
 
 ```bash
 cd gitnexus-shared && npm run build && cd ../gitnexus && npm run build
